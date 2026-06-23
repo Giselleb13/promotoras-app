@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#880e4f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vendas" />
+  <title>Vendas Promotoras</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; background: #f9f4f7; }
+    input, select, button, textarea { font-family: inherit; }
+    select { appearance: none; -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const SENHA_GESTORA = "092430";
+const LOJAS = [
+  "Nab Centro","Nab MDS","Nab Ário","Nab Polo","Nab Boituva",
+  "Origami SMT","Origami Cecap","Japonesa","Charm","Depósito 23","Villa","Gota de Sol 80"
+];
+const PROMOTORAS_INICIAIS = [
+  "Nede","Nely","Priscila","Darlane","Thaís Piracicaba",
+  "Fernanda Piracicaba","Ana Boituva","Thaís Indaiatuba","Tatiaria"
+];
+
+const pink = "#e91e8c", darkPink = "#880e4f";
+const grad = "linear-gradient(135deg,#880e4f,#e91e8c)";
+const card = { background:"#fff", borderRadius:20, padding:20, boxShadow:"0 2px 16px rgba(0,0,0,0.08)", marginBottom:12 };
+const inp = { width:"100%", border:"2px solid #e5e7eb", borderRadius:12, padding:"12px 16px", fontSize:16, outline:"none", background:"#fff" };
+const btn = { width:"100%", padding:"16px", borderRadius:14, fontWeight:700, fontSize:16, border:"none", cursor:"pointer", color:"#fff", background:grad };
+
+// ─── STORAGE ──────────────────────────────────────────────────────
+const KEY = "promotoras_app_v2";
+function loadData() {
+  try {
+    const d = localStorage.getItem(KEY);
+    if (d) return JSON.parse(d);
+  } catch(e) {}
+  return { promotoras: PROMOTORAS_INICIAIS, senhas: {}, registros: [] };
+}
+function saveData(d) {
+  try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e) {}
+}
+
+function useStore() {
+  const [data, setData] = React.useState(loadData);
+  const update = (fn) => setData(prev => {
+    const next = fn(JSON.parse(JSON.stringify(prev)));
+    saveData(next);
+    return next;
+  });
+  const setSenha = (nome, senha) => update(d => { d.senhas[nome] = senha; return d; });
+  const addRegistro = (r) => update(d => {
+    d.registros = d.registros.filter(x => !(x.promotora===r.promotora && x.loja===r.loja && x.data===r.data && x.tipo===r.tipo));
+    d.registros.push({...r, id:Date.now()});
+    return d;
+  });
+  const setPromotoras = (fn) => update(d => { d.promotoras = typeof fn==="function"?fn(d.promotoras):fn; return d; });
+  return { ...data, setSenha, addRegistro, setPromotoras };
+}
+
+const today = () => new Date().toISOString().split("T")[0];
+const fmt = (d) => d ? d.slice(0,5) : "--:--";
+const fmtDate = (d) => { const [y,m,dd] = d.split("-"); return `${dd}/${m}/${y}`; };
+
+// ─── ÍCONE PRODUTO ────────────────────────────────────────────────
+function IconeProduto({ size=64 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+      <ellipse cx="32" cy="18" rx="14" ry="8" fill="#f9a8d4" stroke="#e91e8c" strokeWidth="2"/>
+      <rect x="18" y="18" width="28" height="34" rx="6" fill="#fce4ec" stroke="#e91e8c" strokeWidth="2"/>
+      <ellipse cx="32" cy="18" rx="8" ry="4" fill="#e91e8c"/>
+      <rect x="26" y="26" width="12" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+      <rect x="26" y="32" width="12" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+      <rect x="26" y="38" width="8" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+      <ellipse cx="32" cy="14" rx="4" ry="2" fill="#fff" opacity="0.5"/>
+    </svg>
+  );
+}
+
+// ─── LOGIN PROMOTORA ──────────────────────────────────────────────
+function LoginPromotora({ promotoras, senhas, setSenha, onLogin }) {
+  const [nome, setNome] = React.useState("");
+  const [senha, setSenhaInput] = React.useState("");
+  const [novaSenha, setNovaSenha] = React.useState("");
+  const [confirmSenha, setConfirmSenha] = React.useState("");
+  const [erro, setErro] = React.useState("");
+  const [step, setStep] = React.useState("nome"); // nome | senha | cadastro
+
+  const handleNome = () => {
+    if (!nome) return;
+    if (senhas[nome]) setStep("senha");
+    else setStep("cadastro");
+    setErro("");
+  };
+
+  const handleSenha = () => {
+    if (senhas[nome] === senha) { onLogin(nome); }
+    else { setErro("Senha incorreta. Tente novamente."); setSenhaInput(""); }
+  };
+
+  const handleCadastro = () => {
+    if (novaSenha.length !== 4 || !/^\d+$/.test(novaSenha)) { setErro("A senha deve ter exatamente 4 números."); return; }
+    if (novaSenha !== confirmSenha) { setErro("As senhas não coincidem."); return; }
+    setSenha(nome, novaSenha);
+    onLogin(nome);
+  };
+
+  const bg = { minHeight:"100vh", background:"linear-gradient(135deg,#fce4ec,#f8bbd0)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 };
+
+  if (step === "cadastro") return (
+    <div style={bg}>
+      <div style={{...card, maxWidth:360, width:"100%", padding:32}}>
+        <div style={{textAlign:"center", marginBottom:24}}>
+          <div style={{fontSize:48, marginBottom:8}}>🔐</div>
+          <h2 style={{fontSize:20, fontWeight:700, color:"#1f2937"}}>Criar senha</h2>
+          <p style={{fontSize:13, color:"#6b7280", marginTop:4}}>Olá, <b>{nome}</b>! Crie sua senha de 4 números para acessar o app.</p>
+        </div>
+        <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Nova senha (4 números)</label>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={novaSenha}
+          onChange={e=>{setNovaSenha(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          style={{...inp, marginTop:6, marginBottom:16, textAlign:"center", fontSize:24, letterSpacing:8}} />
+        <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Confirmar senha</label>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={confirmSenha}
+          onChange={e=>{setConfirmSenha(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          onKeyDown={e=>e.key==="Enter"&&handleCadastro()}
+          style={{...inp, marginTop:6, marginBottom:16, textAlign:"center", fontSize:24, letterSpacing:8}} />
+        {erro && <p style={{color:"#ef4444",fontSize:13,marginBottom:12,textAlign:"center"}}>{erro}</p>}
+        <button onClick={handleCadastro} style={btn}>Criar senha e entrar</button>
+        <button onClick={()=>setStep("nome")} style={{...btn,background:"none",color:"#9ca3af",marginTop:8}}>← Voltar</button>
+      </div>
+    </div>
+  );
+
+  if (step === "senha") return (
+    <div style={bg}>
+      <div style={{...card, maxWidth:360, width:"100%", padding:32}}>
+        <div style={{textAlign:"center", marginBottom:24}}>
+          <div style={{fontSize:48, marginBottom:8}}>👋</div>
+          <h2 style={{fontSize:20, fontWeight:700, color:"#1f2937"}}>Olá, {nome}!</h2>
+          <p style={{fontSize:13, color:"#6b7280", marginTop:4}}>Digite sua senha de 4 números</p>
+        </div>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={senha}
+          onChange={e=>{setSenhaInput(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          onKeyDown={e=>e.key==="Enter"&&handleSenha()}
+          style={{...inp, marginBottom:16, textAlign:"center", fontSize:28, letterSpacing:10}} />
+        {erro && <p style={{color:"#ef4444",fontSize:13,marginBottom:12,textAlign:"center"}}>{erro}</p>}
+        <button onClick={handleSenha} style={btn}>Entrar</button>
+        <button onClick={()=>{setStep("nome");setSenhaInput("");setErro("");}} style={{...btn,background:"none",color:"#9ca3af",marginTop:8}}>← Voltar</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={bg}>
+      <div style={{maxWidth:360, width:"100%"}}>
+        <div style={{textAlign:"center", marginBottom:32}}>
+          <IconeProduto size={72} />
+          <h1 style={{fontSize:26, fontWeight:700, color:"#1f2937", marginTop:12}}>Lançar Vendas</h1>
+          <p style={{color:"#6b7280", fontSize:13, marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+        </div>
+        <div style={card}>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Qual é o seu nome?</label>
+          <select style={{...inp, marginTop:6, marginBottom:20}} value={nome} onChange={e=>setNome(e.target.value)}>
+            <option value="">Selecione seu nome...</option>
+            {promotoras.map(p=><option key={p}>{p}</option>)}
+          </select>
+          <button onClick={handleNome} disabled={!nome} style={{...btn,opacity:nome?1:0.4,cursor:nome?"pointer":"not-allowed"}}>
+            {nome && senhas[nome] ? "Continuar →" : nome ? "Criar minha senha →" : "Continuar →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── TELA PROMOTORA ───────────────────────────────────────────────
+function TelaPromotora({ promotora, registros, addRegistro, onLogout }) {
+  const [step, setStep] = React.useState("menu"); // menu | loja | form | falta | ok | okFalta
+  const [loja, setLoja] = React.useState("");
+  const [form, setForm] = React.useState({ entrada:"", saidaAlmoco:"", voltaAlmoco:"", saidaFinal:"", pecas:"" });
+  const [motivoFalta, setMotivoFalta] = React.useState("");
+  const [lojaFalta, setLojaFalta] = React.useState("");
+
+  const existing = registros.find(r => r.promotora===promotora && r.loja===loja && r.data===today() && r.tipo==="venda");
+  const registrosHoje = registros.filter(r => r.promotora===promotora && r.data===today());
+  const bg = { minHeight:"100vh", background:"linear-gradient(135deg,#fce4ec,#f8bbd0)", padding:20 };
+  const bgDark = { minHeight:"100vh", background:grad, padding:20 };
+
+  const handleLoja = () => {
+    if (!loja) return;
+    setForm(existing ? { entrada:existing.entrada||"", saidaAlmoco:existing.saidaAlmoco||"", voltaAlmoco:existing.voltaAlmoco||"", saidaFinal:existing.saidaFinal||"", pecas:existing.pecas?.toString()||"" } : { entrada:"", saidaAlmoco:"", voltaAlmoco:"", saidaFinal:"", pecas:"" });
+    setStep("form");
+  };
+
+  const handleSave = () => {
+    if (!form.pecas) return;
+    addRegistro({ promotora, loja, data:today(), tipo:"venda", ...form, pecas:Number(form.pecas) });
+    setStep("ok");
+  };
+
+  const handleFalta = () => {
+    if (!lojaFalta || !motivoFalta.trim()) return;
+    addRegistro({ promotora, loja:lojaFalta, data:today(), tipo:"falta", motivo:motivoFalta });
+    setStep("okFalta");
+  };
+
+  if (step==="ok") return (
+    <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{...card,textAlign:"center",maxWidth:360,width:"100%",padding:32}}>
+        <div style={{fontSize:64,marginBottom:12}}>✅</div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#1f2937",marginBottom:8}}>Lançado!</h2>
+        <p style={{color:"#6b7280",marginBottom:4}}><b>{promotora}</b> — {loja}</p>
+        <p style={{fontSize:40,fontWeight:700,color:pink,margin:"16px 0"}}>{form.pecas} peças</p>
+        <div style={{fontSize:13,color:"#9ca3af",marginBottom:24,lineHeight:2}}>
+          {form.entrada && <div>Entrada: {fmt(form.entrada)}</div>}
+          {form.saidaAlmoco && <div>Saída almoço: {fmt(form.saidaAlmoco)}</div>}
+          {form.voltaAlmoco && <div>Volta almoço: {fmt(form.voltaAlmoco)}</div>}
+          {form.saidaFinal && <div>Saída final: {fmt(form.saidaFinal)}</div>}
+        </div>
+        <button onClick={()=>setStep("menu")} style={btn}>Voltar ao início</button>
+      </div>
+    </div>
+  );
+
+  if (step==="okFalta") return (
+    <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{...card,textAlign:"center",maxWidth:360,width:"100%",padding:32}}>
+        <div style={{fontSize:64,marginBottom:12}}>📝</div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#1f2937",marginBottom:8}}>Falta registrada!</h2>
+        <p style={{color:"#6b7280",marginBottom:4}}>{lojaFalta}</p>
+        <p style={{color:"#6b7280",fontSize:13,marginTop:8}}>Motivo: <b>{motivoFalta}</b></p>
+        <button onClick={()=>{setStep("menu");setLojaFalta("");setMotivoFalta("");}} style={{...btn,marginTop:24}}>Voltar ao início</button>
+      </div>
+    </div>
+  );
+
+  if (step==="falta") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:darkPink,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:40,marginBottom:8}}>😷</div>
+            <h2 style={{fontSize:20,fontWeight:700,color:"#1f2937"}}>Registrar falta</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>{promotora} — {fmtDate(today())}</p>
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Qual loja você faltou?</label>
+          <select style={{...inp,marginTop:6,marginBottom:16}} value={lojaFalta} onChange={e=>setLojaFalta(e.target.value)}>
+            <option value="">Selecione a loja...</option>
+            {LOJAS.map(l=><option key={l}>{l}</option>)}
+          </select>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Motivo da falta</label>
+          <textarea placeholder="Ex: Doença, consulta médica, problema familiar..." value={motivoFalta}
+            onChange={e=>setMotivoFalta(e.target.value)}
+            style={{...inp,marginTop:6,marginBottom:20,minHeight:100,resize:"none"}} />
+          <button onClick={handleFalta} disabled={!lojaFalta||!motivoFalta.trim()} style={{...btn,opacity:(!lojaFalta||!motivoFalta.trim())?0.4:1,cursor:(!lojaFalta||!motivoFalta.trim())?"not-allowed":"pointer"}}>
+            Registrar falta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step==="form") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("loja")} style={{background:"none",border:"none",color:darkPink,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <p style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Lançamento do dia</p>
+            <p style={{fontSize:18,fontWeight:700,color:"#1f2937",marginTop:4}}>{promotora}</p>
+            <p style={{color:pink,fontWeight:500}}>{loja}</p>
+            {existing && <span style={{fontSize:11,background:"#fef3c7",color:"#92400e",padding:"2px 10px",borderRadius:99}}>Editando registro de hoje</span>}
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Entrada</label>
+          <input type="time" style={{...inp,marginTop:6,marginBottom:16}} value={form.entrada} onChange={e=>setForm(f=>({...f,entrada:e.target.value}))} />
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Saída almoço</label>
+              <input type="time" style={{...inp,marginTop:6}} value={form.saidaAlmoco} onChange={e=>setForm(f=>({...f,saidaAlmoco:e.target.value}))} />
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Volta almoço</label>
+              <input type="time" style={{...inp,marginTop:6}} value={form.voltaAlmoco} onChange={e=>setForm(f=>({...f,voltaAlmoco:e.target.value}))} />
+            </div>
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Saída final</label>
+          <input type="time" style={{...inp,marginTop:6,marginBottom:16}} value={form.saidaFinal} onChange={e=>setForm(f=>({...f,saidaFinal:e.target.value}))} />
+          <label style={{fontSize:14,fontWeight:700,color:"#1f2937"}}>Total de peças vendidas *</label>
+          <input type="number" min="0" placeholder="0" style={{...inp,marginTop:6,marginBottom:20,fontSize:28,fontWeight:700,textAlign:"center",color:pink}} value={form.pecas} onChange={e=>setForm(f=>({...f,pecas:e.target.value}))} />
+          <button onClick={handleSave} disabled={!form.pecas} style={{...btn,opacity:form.pecas?1:0.4,cursor:form.pecas?"pointer":"not-allowed"}}>Salvar lançamento</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step==="loja") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:darkPink,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <p style={{fontSize:18,fontWeight:700,color:"#1f2937"}}>Olá, {promotora}! 👋</p>
+            <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>Em qual loja você está hoje?</p>
+          </div>
+          <select style={{...inp,marginTop:6,marginBottom:20}} value={loja} onChange={e=>setLoja(e.target.value)}>
+            <option value="">Selecione a loja...</option>
+            {LOJAS.map(l=><option key={l}>{l}</option>)}
+          </select>
+          <button onClick={handleLoja} disabled={!loja} style={{...btn,opacity:loja?1:0.4,cursor:loja?"pointer":"not-allowed"}}>Continuar →</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // MENU PRINCIPAL
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
+        <IconeProduto size={72} />
+        <h1 style={{fontSize:24,fontWeight:700,color:"#fff",marginTop:12}}>Olá, {promotora}! 👋</h1>
+        <p style={{color:"#fce4ec",fontSize:13,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+        {registrosHoje.length > 0 && (
+          <div style={{marginTop:12,background:"rgba(255,255,255,0.2)",borderRadius:12,padding:"8px 16px",display:"inline-block"}}>
+            <p style={{color:"#fff",fontSize:13}}>✅ {registrosHoje.filter(r=>r.tipo==="venda").length} venda{registrosHoje.filter(r=>r.tipo==="venda").length!==1?"s":""} lançada{registrosHoje.filter(r=>r.tipo==="venda").length!==1?"s":""} hoje</p>
+          </div>
+        )}
+      </div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:14}}>
+        <button onClick={()=>setStep("loja")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:16,border:"none",cursor:"pointer",color:darkPink,background:"#fff",boxShadow:"0 8px 32px rgba(136,14,79,0.25)",textAlign:"center"}}>
+          🏪 Lançar vendas do dia
+          <div style={{fontSize:12,fontWeight:400,color:"#9ca3af",marginTop:4}}>Registrar peças vendidas</div>
+        </button>
+        <button onClick={()=>setStep("falta")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:16,border:"2px solid rgba(255,255,255,0.6)",cursor:"pointer",color:"#fff",background:"rgba(255,255,255,0.15)",textAlign:"center"}}>
+          😷 Registrar falta
+          <div style={{fontSize:12,fontWeight:400,color:"#fce4ec",marginTop:4}}>Informar ausência e motivo</div>
+        </button>
+        <button onClick={onLogout} style={{padding:"12px",borderRadius:14,fontWeight:600,fontSize:14,border:"none",cursor:"pointer",color:"rgba(255,255,255,0.7)",background:"transparent",marginTop:8}}>
+          Sair da conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD GESTORA ────────────────────────────────────────────
+function Dashboard({ promotoras, setPromotoras, registros, senhas }) {
+  const [tab, setTab] = React.useState("hoje");
+  const [mesRef, setMesRef] = React.useState(()=>today().slice(0,7));
+  const [promoDetalhe, setPromoDetalhe] = React.useState(null);
+
+  const getWeekRange = () => {
+    const d = new Date(); const day = d.getDay();
+    const mon = new Date(d); mon.setDate(d.getDate()-day+(day===0?-6:1));
+    const sun = new Date(mon); sun.setDate(mon.getDate()+6);
+    return [mon.toISOString().split("T")[0], sun.toISOString().split("T")[0]];
+  };
+  const [weekStart,weekEnd] = getWeekRange();
+
+  const filterBy = (tipo) => {
+    if (tipo==="hoje") return registros.filter(r=>r.data===today());
+    if (tipo==="semana") return registros.filter(r=>r.data>=weekStart&&r.data<=weekEnd);
+    if (tipo==="mes") return registros.filter(r=>r.data.startsWith(mesRef));
+    return registros;
+  };
+
+  const vendasOnly = (arr) => arr.filter(r=>r.tipo==="venda");
+  const sumPecas = (arr) => vendasOnly(arr).reduce((s,r)=>s+(r.pecas||0),0);
+  const byGroup = (arr,key) => {
+    const map={};
+    vendasOnly(arr).forEach(r=>{map[r[key]]=(map[r[key]]||0)+(r.pecas||0);});
+    return Object.entries(map).sort((a,b)=>b[1]-a[1]);
+  };
+
+  const current = filterBy(["hoje","semana","mes"].includes(tab)?tab:"hoje");
+  const totalAll = sumPecas(registros);
+
+  const [novaP,setNovaP] = React.useState("");
+  const [editIdx,setEditIdx] = React.useState(null);
+  const [editVal,setEditVal] = React.useState("");
+  const addP = () => { if(novaP.trim()){setPromotoras(p=>[...p,novaP.trim()]);setNovaP("");} };
+  const removeP = (i) => { if(window.confirm("Remover essa promotora?")) setPromotoras(p=>p.filter((_,idx)=>idx!==i)); };
+  const saveEdit = (i) => { setPromotoras(p=>p.map((x,idx)=>idx===i?editVal:x)); setEditIdx(null); };
+
+  const tabs = [{id:"hoje",label:"Hoje"},{id:"semana",label:"Semana"},{id:"mes",label:"Mês"},{id:"lojas",label:"Lojas"},{id:"ranking",label:"Ranking"},{id:"config",label:"⚙️"}];
+  const inp2 = {border:"2px solid #e5e7eb",borderRadius:12,padding:"10px 14px",fontSize:14,outline:"none",background:"#fff"};
+
+  // DETALHE PROMOTORA
+  if (promoDetalhe) {
+    const regs = registros.filter(r=>r.promotora===promoDetalhe).sort((a,b)=>b.data.localeCompare(a.data));
+    const vendas = regs.filter(r=>r.tipo==="venda");
+    const faltas = regs.filter(r=>r.tipo==="falta");
+    const totalPecas = vendas.reduce((s,r)=>s+(r.pecas||0),0);
+    const diasTrab = [...new Set(vendas.map(r=>r.data))].length;
+    const lojas = [...new Set(vendas.map(r=>r.loja))];
+    return (
+      <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+        <div style={{padding:"32px 20px 20px",background:grad}}>
+          <button onClick={()=>setPromoDetalhe(null)} style={{background:"none",border:"none",color:"#f9a8d4",fontWeight:600,fontSize:14,cursor:"pointer",marginBottom:8,padding:0}}>← Voltar</button>
+          <h1 style={{color:"#fff",fontSize:22,fontWeight:700}}>{promoDetalhe}</h1>
+          <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{diasTrab} dias trabalhados · {faltas.length} falta{faltas.length!==1?"s":""}</p>
+        </div>
+        <div style={{padding:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div style={{...card,textAlign:"center",marginBottom:0}}>
+              <p style={{fontSize:32,fontWeight:700,color:pink}}>{totalPecas}</p>
+              <p style={{fontSize:12,color:"#9ca3af"}}>peças total</p>
+            </div>
+            <div style={{...card,textAlign:"center",marginBottom:0}}>
+              <p style={{fontSize:32,fontWeight:700,color:"#7c3aed"}}>{diasTrab>0?(totalPecas/diasTrab).toFixed(1):0}</p>
+              <p style={{fontSize:12,color:"#9ca3af"}}>média/dia</p>
+            </div>
+          </div>
+          <div style={{...card,marginBottom:12}}>
+            <p style={{fontSize:13,fontWeight:700,color:"#6b7280",marginBottom:8}}>LOJAS QUE TRABALHOU</p>
+            {lojas.length===0 ? <p style={{color:"#9ca3af",fontSize:13}}>Nenhuma venda ainda</p>
+            : lojas.map(l=>{
+              const qtd = vendas.filter(r=>r.loja===l).reduce((s,r)=>s+(r.pecas||0),0);
+              return <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}>
+                <span style={{fontWeight:500,color:"#1f2937",fontSize:14}}>{l}</span>
+                <span style={{fontWeight:700,color:pink}}>{qtd} peças</span>
+              </div>;
+            })}
+          </div>
+          <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Histórico completo</p>
+          {regs.length===0 ? <p style={{color:"#9ca3af",textAlign:"center",padding:"20px 0"}}>Nenhum registro ainda</p>
+          : regs.map(r=>(
+            <div key={r.id} style={{...card,padding:"14px 16px",borderLeft:r.tipo==="falta"?"4px solid #ef4444":"4px solid #e91e8c"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <p style={{fontWeight:700,color:"#1f2937",fontSize:14}}>{fmtDate(r.data)}</p>
+                  <p style={{fontSize:13,color:"#6b7280"}}>{r.loja}</p>
+                  {r.tipo==="falta" && <p style={{fontSize:12,color:"#ef4444",marginTop:2}}>Falta: {r.motivo}</p>}
+                  {r.tipo==="venda" && r.entrada && <p style={{fontSize:11,color:"#9ca3af",marginTop:2}}>
+                    {r.entrada&&`Entrada ${fmt(r.entrada)}`}{r.saidaFinal&&` · Saída ${fmt(r.saidaFinal)}`}
+                  </p>}
+                </div>
+                {r.tipo==="venda" && <div style={{textAlign:"right"}}>
+                  <p style={{fontSize:22,fontWeight:700,color:pink}}>{r.pecas}</p>
+                  <p style={{fontSize:11,color:"#9ca3af"}}>peças</p>
+                </div>}
+                {r.tipo==="falta" && <span style={{fontSize:20}}>😷</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+      <div style={{padding:"32px 20px 20px",background:grad}}>
+        <p style={{color:"#f9a8d4",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2}}>Painel da Gestora</p>
+        <h1 style={{color:"#fff",fontSize:24,fontWeight:700,marginTop:4}}>Central de Vendas</h1>
+        <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+      </div>
+      <div style={{display:"flex",overflowX:"auto",padding:"12px 16px",gap:8,background:"#fff",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flexShrink:0,padding:"8px 16px",borderRadius:99,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",background:tab===t.id?grad:"#fce4ec",color:tab===t.id?"#fff":"#880e4f"}}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{padding:16}}>
+        {["hoje","semana","mes"].includes(tab) && (<>
+          {tab==="mes" && <input type="month" value={mesRef} onChange={e=>setMesRef(e.target.value)} style={{...inp2,width:"100%",marginBottom:12}} />}
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:grad}}>
+            <p style={{color:"#f9a8d4",fontSize:13}}>Total — {tab==="hoje"?"hoje":tab==="semana"?"esta semana":"este mês"}</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{sumPecas(current)}</p>
+            <p style={{color:"#f9a8d4",fontSize:12,marginTop:4}}>{vendasOnly(current).length} lançamentos · {current.filter(r=>r.tipo==="falta").length} faltas</p>
+          </div>
+          {vendasOnly(current).length===0 && current.filter(r=>r.tipo==="falta").length===0
+            ? <div style={{textAlign:"center",padding:"40px 0",color:"#9ca3af"}}><div style={{fontSize:40,marginBottom:8}}>📭</div><p>Nenhum lançamento neste período</p></div>
+            : byGroup(current,"promotora").map(([prom,qtd])=>{
+              const dias=[...new Set(vendasOnly(current).filter(r=>r.promotora===prom).map(r=>r.data))].length;
+              const faltas=current.filter(r=>r.promotora===prom&&r.tipo==="falta").length;
+              return <div key={prom} onClick={()=>setPromoDetalhe(prom)} style={{...card,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                <div>
+                  <p style={{fontWeight:700,color:"#1f2937"}}>{prom}</p>
+                  <p style={{fontSize:12,color:"#9ca3af"}}>{dias} dia{dias!==1?"s":""} · {faltas>0?`${faltas} falta${faltas!==1?"s":""}`:"sem faltas"}</p>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{textAlign:"right"}}><p style={{fontSize:28,fontWeight:700,color:pink}}>{qtd}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>
+                  <span style={{color:"#d1d5db"}}>›</span>
+                </div>
+              </div>;
+            })}
+        </>)}
+
+        {tab==="lojas" && (<>
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:"linear-gradient(135deg,#4a148c,#880e4f)"}}>
+            <p style={{color:"#e9d5ff",fontSize:13}}>Total por loja</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{totalAll}</p>
+          </div>
+          {registros.length===0 ? <p style={{textAlign:"center",color:"#9ca3af",padding:"40px 0"}}>Nenhum dado ainda</p>
+          : byGroup(registros,"loja").map(([loja,qtd],i)=>(
+            <div key={loja} style={{...card,display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:16,fontWeight:700,color:"#d1d5db",width:24}}>#{i+1}</span>
+              <div style={{flex:1}}>
+                <p style={{fontWeight:700,color:"#1f2937",marginBottom:6}}>{loja}</p>
+                <div style={{height:6,background:"#f3e8ff",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:99,width:`${totalAll?(qtd/totalAll)*100:0}%`,background:"linear-gradient(90deg,#880e4f,#e91e8c)"}} />
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}><p style={{fontSize:24,fontWeight:700,color:pink}}>{qtd}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>
+            </div>
+          ))}
+        </>)}
+
+        {tab==="ranking" && (<>
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:"linear-gradient(135deg,#1a237e,#283593)"}}>
+            <p style={{color:"#bfdbfe",fontSize:13}}>Ranking geral</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{totalAll}</p>
+          </div>
+          {registros.length===0 ? <p style={{textAlign:"center",color:"#9ca3af",padding:"40px 0"}}>Nenhum dado ainda</p>
+          : byGroup(registros,"promotora").map(([prom,qtd],i)=>{
+            const dias=[...new Set(vendasOnly(registros).filter(r=>r.promotora===prom).map(r=>r.data))].length;
+            const faltas=registros.filter(r=>r.promotora===prom&&r.tipo==="falta").length;
+            const medal=i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`;
+            return <div key={prom} onClick={()=>setPromoDetalhe(prom)} style={{...card,cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:22}}>{medal}</span>
+                  <div>
+                    <p style={{fontWeight:700,color:"#1f2937"}}>{prom}</p>
+                    <p style={{fontSize:12,color:"#9ca3af"}}>{dias} dias · {faltas} falta{faltas!==1?"s":""} · média {dias?(qtd/dias).toFixed(1):0}/dia</p>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{textAlign:"right"}}><p style={{fontSize:28,fontWeight:700,color:pink}}>{qtd}</p><p style={{fontSize:11,color:"#9ca3af"}}>total</p></div>
+                  <span style={{color:"#d1d5db"}}>›</span>
+                </div>
+              </div>
+            </div>;
+          })}
+        </>)}
+
+        {tab==="config" && (<>
+          <p style={{fontWeight:700,fontSize:18,color:"#1f2937",marginBottom:12}}>Gerenciar Promotoras</p>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <input style={{...inp2,flex:1}} placeholder="Nome da nova promotora" value={novaP} onChange={e=>setNovaP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addP()} />
+            <button onClick={addP} style={{padding:"10px 16px",borderRadius:12,fontWeight:700,fontSize:14,border:"none",cursor:"pointer",color:"#fff",background:pink}}>+ Add</button>
+          </div>
+          {promotoras.map((p,i)=>(
+            <div key={i} style={{...card,display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
+              {editIdx===i ? <>
+                <input style={{...inp2,flex:1,fontSize:14}} value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus />
+                <button onClick={()=>saveEdit(i)} style={{background:"none",border:"none",color:"#16a34a",fontWeight:700,fontSize:16,cursor:"pointer"}}>✓</button>
+                <button onClick={()=>setEditIdx(null)} style={{background:"none",border:"none",color:"#9ca3af",fontSize:16,cursor:"pointer"}}>✕</button>
+              </> : <>
+                <div style={{flex:1}}>
+                  <p style={{fontWeight:500,color:"#1f2937"}}>{p}</p>
+                  <p style={{fontSize:11,color:senhas[p]?"#16a34a":"#f59e0b"}}>{senhas[p]?"✓ Senha cadastrada":"⚠ Sem senha ainda"}</p>
+                </div>
+                <button onClick={()=>{setEditIdx(i);setEditVal(p);}} style={{background:"none",border:"none",fontSize:16,cursor:"pointer"}}>✏️</button>
+                <button onClick={()=>removeP(i)} style={{background:"none",border:"none",fontSize:16,cursor:"pointer"}}>🗑️</button>
+              </>}
+            </div>
+          ))}
+          <div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:12,padding:12,fontSize:12,color:"#92400e",marginTop:8}}>
+            <b>Atenção:</b> cada promotora cria sua própria senha no primeiro acesso.
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+// ─── TELA SENHA GESTORA ───────────────────────────────────────────
+function TelaSenhaGestora({ onSuccess }) {
+  const [senha,setSenha] = React.useState("");
+  const [erro,setErro] = React.useState(false);
+  const tentar = () => {
+    if (senha===SENHA_GESTORA) onSuccess();
+    else { setErro(true); setSenha(""); }
+  };
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:"#fff",borderRadius:24,padding:32,maxWidth:320,width:"100%",textAlign:"center",boxShadow:"0 8px 32px rgba(0,0,0,0.2)"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🔐</div>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#1f2937",marginBottom:4}}>Painel da Gestora</h2>
+        <p style={{fontSize:13,color:"#9ca3af",marginBottom:24}}>Digite a senha para entrar</p>
+        <input type="password" placeholder="Senha" value={senha}
+          onChange={e=>{setSenha(e.target.value);setErro(false);}}
+          onKeyDown={e=>e.key==="Enter"&&tentar()}
+          style={{width:"100%",border:erro?"2px solid #ef4444":"2px solid #e5e7eb",borderRadius:12,padding:"14px 16px",fontSize:18,textAlign:"center",outline:"none",marginBottom:8,letterSpacing:4}} />
+        {erro && <p style={{color:"#ef4444",fontSize:13,marginBottom:8}}>Senha incorreta.</p>}
+        <button onClick={tentar} style={{...btn,marginTop:8}}>Entrar</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── APP ──────────────────────────────────────────────────────────
+function App() {
+  const store = useStore();
+  const [modo,setModo] = React.useState("home");
+  const [senhaOk,setSenhaOk] = React.useState(false);
+  const [promotoraLogada,setPromotoraLogada] = React.useState(null);
+
+  if (modo==="promotora") {
+    if (!promotoraLogada) return <LoginPromotora promotoras={store.promotoras} senhas={store.senhas} setSenha={store.setSenha} onLogin={nome=>{setPromotoraLogada(nome);}} />;
+    return <TelaPromotora promotora={promotoraLogada} registros={store.registros} addRegistro={store.addRegistro} onLogout={()=>{setPromotoraLogada(null);setModo("home");}} />;
+  }
+
+  if (modo==="dashboard") {
+    if (!senhaOk) return <TelaSenhaGestora onSuccess={()=>setSenhaOk(true)} />;
+    return <div>
+      <Dashboard promotoras={store.promotoras} setPromotoras={store.setPromotoras} registros={store.registros} senhas={store.senhas} />
+      <button onClick={()=>{setModo("home");setSenhaOk(false);}} style={{position:"fixed",bottom:20,right:20,width:48,height:48,borderRadius:"50%",background:darkPink,color:"#fff",border:"none",fontSize:20,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 16px rgba(136,14,79,0.4)"}}>←</button>
+    </div>;
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{textAlign:"center",marginBottom:40}}>
+        <IconeProduto size={80} />
+        <h1 style={{fontSize:28,fontWeight:700,color:"#fff",marginTop:16}}>Vendas Promotoras</h1>
+        <p style={{color:"#fce4ec",marginTop:6,fontSize:14}}>Controle diário de vendas</p>
+      </div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:16}}>
+        <button onClick={()=>setModo("promotora")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:17,border:"none",cursor:"pointer",color:darkPink,background:"#fff",boxShadow:"0 8px 32px rgba(136,14,79,0.25)",textAlign:"center"}}>
+          👩 Sou Promotora
+          <div style={{fontSize:12,fontWeight:400,color:"#9ca3af",marginTop:4}}>Lançar vendas do dia</div>
+        </button>
+        <button onClick={()=>setModo("dashboard")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:17,border:"2px solid rgba(255,255,255,0.5)",cursor:"pointer",color:"#fff",background:"rgba(255,255,255,0.15)",textAlign:"center"}}>
+          📊 Painel da Gestora
+          <div style={{fontSize:12,fontWeight:400,color:"#fce4ec",marginTop:4}}>Ver relatórios e rankings</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
