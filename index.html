@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#880e4f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vendas" />
+  <title>Vendas Promotoras</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, set, get, onValue, push, remove, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    const app = initializeApp({ databaseURL: "https://promotoras-app-default-rtdb.firebaseio.com" });
+    const db = getDatabase(app);
+    window._fb = { db, ref, set, get, onValue, push, remove, update };
+  </script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+    input, select, button, textarea { font-family: inherit; }
+    select { appearance: none; -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ── CONSTANTES ────────────────────────────────────────────────────
+const SENHA_GESTORA = "092430";
+const LOJAS = ["Nab Centro","Nab MDS","Nab Ário","Nab Polo","Nab Boituva","Origami SMT","Origami Cecap","Japonesa","Charm","Depósito 23","Villa","Gota de Sol 80"];
+const PROMS_DEFAULT = ["Nede","Nely","Priscila","Darlane","Thaís Piracicaba","Fernanda Piracicaba","Ana Boituva","Thaís Indaiatuba","Tatiaria"];
+const TIPOS_SOLIC = ["Produto com vencimento próximo","Solicitar sachês","Solicitar brindes","Informação importante","Outro"];
+const pink = "#e91e8c";
+const dark = "#880e4f";
+const grad = "linear-gradient(135deg,#880e4f,#e91e8c)";
+
+// ── ESTILOS ───────────────────────────────────────────────────────
+const C = {
+  card: { background:"#fff", borderRadius:20, padding:20, boxShadow:"0 2px 16px rgba(0,0,0,0.08)", marginBottom:12 },
+  inp: { width:"100%", border:"2px solid #e5e7eb", borderRadius:12, padding:"12px 16px", fontSize:16, outline:"none", background:"#fff" },
+  btn: { width:"100%", padding:"16px", borderRadius:14, fontWeight:700, fontSize:16, border:"none", cursor:"pointer", color:"#fff", background:grad },
+  inp2: { border:"2px solid #e5e7eb", borderRadius:12, padding:"10px 14px", fontSize:14, outline:"none", background:"#fff" },
+};
+
+// ── HELPERS ───────────────────────────────────────────────────────
+const today = () => new Date().toISOString().split("T")[0];
+const fmt = d => d ? d.slice(0,5) : "--:--";
+const fmtDate = d => { if(!d) return ""; const [y,m,dd] = d.split("-"); return `${dd}/${m}/${y}`; };
+const fmtTS = ts => { if(!ts) return ""; const d = new Date(ts); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); };
+const getQuinzena = data => {
+  const d = new Date(data + "T12:00:00");
+  const dia = d.getDate();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const y = d.getFullYear();
+  return dia <= 15 ? `${y}-${m}-01` : `${y}-${m}-16`;
+};
+const quinzenaLabel = q => {
+  const [y,m,d] = q.split("-");
+  const ultimoDia = new Date(Number(y), Number(m), 0).getDate();
+  return d === "01" ? `1 a 15/${m}/${y}` : `16 a ${ultimoDia}/${m}/${y}`;
+};
+const quinzenaFim = q => {
+  const [y,m,d] = q.split("-");
+  const ultimoDia = new Date(Number(y), Number(m), 0).getDate();
+  return d === "01" ? `${y}-${m}-15` : `${y}-${m}-${ultimoDia}`;
+};
+
+// ── FIREBASE ─────────────────────────────────────────────────────
+const fb = {
+  get: async path => { const {db,ref,get} = window._fb; const s = await get(ref(db,path)); return s.exists() ? s.val() : null; },
+  set: async (path,val) => { const {db,ref,set} = window._fb; await set(ref(db,path),val); },
+  push: async (path,val) => { const {db,ref,push} = window._fb; const r = await push(ref(db,path),val); return r.key; },
+  remove: async path => { const {db,ref,remove} = window._fb; await remove(ref(db,path)); },
+  update: async (path,val) => { const {db,ref,update} = window._fb; await update(ref(db,path),val); },
+  listen: (path,cb) => { const {db,ref,onValue} = window._fb; return onValue(ref(db,path), s => cb(s.exists() ? s.val() : null)); },
+};
+
+// ── ICONE ─────────────────────────────────────────────────────────
+function Icone({size=64}) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none">
+      <ellipse cx="32" cy="18" rx="14" ry="8" fill="#f9a8d4" stroke="#e91e8c" strokeWidth="2"/>
+      <rect x="18" y="18" width="28" height="34" rx="6" fill="#fce4ec" stroke="#e91e8c" strokeWidth="2"/>
+      <ellipse cx="32" cy="18" rx="8" ry="4" fill="#e91e8c"/>
+      <rect x="26" y="26" width="12" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+      <rect x="26" y="32" width="12" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+      <rect x="26" y="38" width="8" height="3" rx="1.5" fill="#e91e8c" opacity="0.4"/>
+    </svg>
+  );
+}
+
+function Spinner() {
+  return <div style={{textAlign:"center",padding:60,color:"#9ca3af"}}><div style={{fontSize:36}}>⏳</div><p style={{marginTop:12}}>Carregando...</p></div>;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// LOGIN PROMOTORA
+// ═══════════════════════════════════════════════════════════════════
+function LoginPromotora({ onLogin }) {
+  const [proms, setProms] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [nome, setNome] = React.useState("");
+  const [senha, setSenha] = React.useState("");
+  const [nova, setNova] = React.useState("");
+  const [conf, setConf] = React.useState("");
+  const [erro, setErro] = React.useState("");
+  const [step, setStep] = React.useState("nome");
+
+  React.useEffect(() => {
+    return fb.listen("promotoras", val => {
+      if (val) setProms(Object.values(val));
+      else { PROMS_DEFAULT.forEach(p => fb.push("promotoras", p)); setProms(PROMS_DEFAULT); }
+      setLoading(false);
+    });
+  }, []);
+
+  const goNome = async () => {
+    if (!nome) return;
+    const s = await fb.get(`senhas/${nome.replace(/\s+/g,"_")}`);
+    setStep(s ? "senha" : "cadastro");
+    setErro("");
+  };
+
+  const goSenha = async () => {
+    const s = await fb.get(`senhas/${nome.replace(/\s+/g,"_")}`);
+    if (s === senha) onLogin(nome);
+    else { setErro("Senha incorreta."); setSenha(""); }
+  };
+
+  const goCadastro = async () => {
+    if (nova.length !== 4 || !/^\d+$/.test(nova)) { setErro("Deve ter exatamente 4 números."); return; }
+    if (nova !== conf) { setErro("Senhas não coincidem."); return; }
+    await fb.set(`senhas/${nome.replace(/\s+/g,"_")}`, nova);
+    onLogin(nome);
+  };
+
+  const bg = { minHeight:"100vh", background:"linear-gradient(135deg,#fce4ec,#f8bbd0)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 };
+
+  if (loading) return <div style={bg}><Spinner /></div>;
+
+  if (step === "cadastro") return (
+    <div style={bg}>
+      <div style={{...C.card, maxWidth:360, width:"100%", padding:32}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:48,marginBottom:8}}>🔐</div>
+          <h2 style={{fontSize:20,fontWeight:700,color:"#1f2937"}}>Criar senha</h2>
+          <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>Olá <b>{nome}</b>! Crie sua senha de 4 números.</p>
+        </div>
+        <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Nova senha</label>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={nova}
+          onChange={e=>{setNova(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          style={{...C.inp,marginTop:6,marginBottom:16,textAlign:"center",fontSize:24,letterSpacing:8}}/>
+        <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Confirmar</label>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={conf}
+          onChange={e=>{setConf(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          onKeyDown={e=>e.key==="Enter"&&goCadastro()}
+          style={{...C.inp,marginTop:6,marginBottom:16,textAlign:"center",fontSize:24,letterSpacing:8}}/>
+        {erro && <p style={{color:"#ef4444",fontSize:13,marginBottom:12,textAlign:"center"}}>{erro}</p>}
+        <button onClick={goCadastro} style={C.btn}>Criar senha e entrar</button>
+        <button onClick={()=>{setStep("nome");setErro("");}} style={{...C.btn,background:"none",color:"#9ca3af",marginTop:8}}>← Voltar</button>
+      </div>
+    </div>
+  );
+
+  if (step === "senha") return (
+    <div style={bg}>
+      <div style={{...C.card, maxWidth:360, width:"100%", padding:32}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:48,marginBottom:8}}>👋</div>
+          <h2 style={{fontSize:20,fontWeight:700,color:"#1f2937"}}>Olá, {nome}!</h2>
+          <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>Digite sua senha de 4 números</p>
+        </div>
+        <input type="password" inputMode="numeric" maxLength={4} placeholder="0000" value={senha}
+          onChange={e=>{setSenha(e.target.value.replace(/\D/g,"").slice(0,4));setErro("");}}
+          onKeyDown={e=>e.key==="Enter"&&goSenha()}
+          style={{...C.inp,marginBottom:16,textAlign:"center",fontSize:28,letterSpacing:10}}/>
+        {erro && <p style={{color:"#ef4444",fontSize:13,marginBottom:12,textAlign:"center"}}>{erro}</p>}
+        <button onClick={goSenha} style={C.btn}>Entrar</button>
+        <button onClick={()=>{setStep("nome");setSenha("");setErro("");}} style={{...C.btn,background:"none",color:"#9ca3af",marginTop:8}}>← Voltar</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={bg}>
+      <div style={{maxWidth:360,width:"100%"}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <Icone size={72}/>
+          <h1 style={{fontSize:26,fontWeight:700,color:"#1f2937",marginTop:12}}>Lançar Vendas</h1>
+          <p style={{color:"#6b7280",fontSize:13,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+        </div>
+        <div style={C.card}>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Qual é o seu nome?</label>
+          <select style={{...C.inp,marginTop:6,marginBottom:20}} value={nome} onChange={e=>setNome(e.target.value)}>
+            <option value="">Selecione seu nome...</option>
+            {proms.map((p,i)=><option key={i}>{p}</option>)}
+          </select>
+          <button onClick={goNome} disabled={!nome} style={{...C.btn,opacity:nome?1:0.4}}>Continuar →</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TELA PROMOTORA
+// ═══════════════════════════════════════════════════════════════════
+function TelaPromotora({ promotora, onLogout }) {
+  const [step, setStep] = React.useState("menu");
+  const [loja, setLoja] = React.useState("");
+  const [form, setForm] = React.useState({entrada:"",saidaAlmoco:"",voltaAlmoco:"",saidaFinal:"",pecas:""});
+  const [lojaFalta, setLojaFalta] = React.useState("");
+  const [motivoFalta, setMotivoFalta] = React.useState("");
+  const [tipoSolic, setTipoSolic] = React.useState("");
+  const [descSolic, setDescSolic] = React.useState("");
+  const [mesHist, setMesHist] = React.useState(today().slice(0,7));
+  const [saving, setSaving] = React.useState(false);
+  const [regsHoje, setRegsHoje] = React.useState([]);
+  const [todosRegs, setTodosRegs] = React.useState([]);
+  const [solics, setSolics] = React.useState([]);
+  const [pagtos, setPagtos] = React.useState([]);
+  const [valDiario, setValDiario] = React.useState(0);
+
+  React.useEffect(() => {
+    const u1 = fb.listen("registros", val => {
+      const arr = val ? Object.entries(val).map(([k,v])=>({...v,_k:k})).filter(r=>r.promotora===promotora) : [];
+      setRegsHoje(arr.filter(r=>r.data===today()));
+      setTodosRegs(arr);
+    });
+    const u2 = fb.listen("solicitacoes", val => {
+      setSolics(val ? Object.entries(val).map(([k,v])=>({...v,_k:k})).filter(s=>s.promotora===promotora).sort((a,b)=>b.ts-a.ts) : []);
+    });
+    const u3 = fb.listen("pagamentos", val => {
+      setPagtos(val ? Object.entries(val).map(([k,v])=>({...v,_k:k})).filter(p=>p.promotora===promotora).sort((a,b)=>b.pagoEm-a.pagoEm) : []);
+    });
+    const u4 = fb.listen(`valoresDiarios/${promotora.replace(/\s+/g,"_")}`, val => setValDiario(val||0));
+    return () => { u1(); u2(); u3(); u4(); };
+  }, [promotora]);
+
+  const existing = regsHoje.find(r=>r.loja===loja && r.tipo==="venda");
+  const pendSolics = solics.filter(s=>s.status==="pendente").length;
+
+  const goLoja = () => {
+    if (!loja) return;
+    setForm(existing ? {entrada:existing.entrada||"",saidaAlmoco:existing.saidaAlmoco||"",voltaAlmoco:existing.voltaAlmoco||"",saidaFinal:existing.saidaFinal||"",pecas:String(existing.pecas||"")} : {entrada:"",saidaAlmoco:"",voltaAlmoco:"",saidaFinal:"",pecas:""});
+    setStep("form");
+  };
+
+  const salvarVenda = async () => {
+    if (!form.pecas || saving) return;
+    setSaving(true);
+    if (existing?._k) await fb.remove(`registros/${existing._k}`);
+    await fb.push("registros", {promotora, loja, data:today(), tipo:"venda", ...form, pecas:Number(form.pecas), ts:Date.now()});
+    setSaving(false);
+    setStep("ok");
+  };
+
+  const salvarFalta = async () => {
+    if (!lojaFalta || !motivoFalta.trim() || saving) return;
+    setSaving(true);
+    await fb.push("registros", {promotora, loja:lojaFalta, data:today(), tipo:"falta", motivo:motivoFalta, ts:Date.now()});
+    setSaving(false);
+    setStep("okFalta");
+  };
+
+  const salvarSolic = async () => {
+    if (!tipoSolic || !descSolic.trim() || saving) return;
+    setSaving(true);
+    await fb.push("solicitacoes", {promotora, tipo:tipoSolic, descricao:descSolic, status:"pendente", ts:Date.now()});
+    setSaving(false);
+    setTipoSolic(""); setDescSolic("");
+    setStep("okSolic");
+  };
+
+  const bg = {minHeight:"100vh",background:"linear-gradient(135deg,#fce4ec,#f8bbd0)",padding:20};
+
+  // ── OK SCREENS ──
+  if (step==="ok") return (
+    <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{...C.card,textAlign:"center",maxWidth:360,width:"100%",padding:32}}>
+        <div style={{fontSize:64,marginBottom:12}}>✅</div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#1f2937",marginBottom:8}}>Lançado!</h2>
+        <p style={{color:"#6b7280",marginBottom:4}}><b>{promotora}</b> — {loja}</p>
+        <p style={{fontSize:40,fontWeight:700,color:pink,margin:"16px 0"}}>{form.pecas} peças</p>
+        <div style={{fontSize:13,color:"#9ca3af",marginBottom:24,lineHeight:2}}>
+          {form.entrada&&<div>Entrada: {fmt(form.entrada)}</div>}
+          {form.saidaAlmoco&&<div>Saída almoço: {fmt(form.saidaAlmoco)}</div>}
+          {form.voltaAlmoco&&<div>Volta almoço: {fmt(form.voltaAlmoco)}</div>}
+          {form.saidaFinal&&<div>Saída final: {fmt(form.saidaFinal)}</div>}
+        </div>
+        <button onClick={()=>setStep("menu")} style={C.btn}>Voltar ao início</button>
+      </div>
+    </div>
+  );
+
+  if (step==="okFalta") return (
+    <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{...C.card,textAlign:"center",maxWidth:360,width:"100%",padding:32}}>
+        <div style={{fontSize:64,marginBottom:12}}>📝</div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#1f2937",marginBottom:8}}>Falta registrada!</h2>
+        <p style={{color:"#6b7280"}}>{lojaFalta}</p>
+        <p style={{color:"#9ca3af",fontSize:13,marginTop:8}}>Motivo: <b>{motivoFalta}</b></p>
+        <button onClick={()=>{setStep("menu");setLojaFalta("");setMotivoFalta("");}} style={{...C.btn,marginTop:24}}>Voltar ao início</button>
+      </div>
+    </div>
+  );
+
+  if (step==="okSolic") return (
+    <div style={{...bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{...C.card,textAlign:"center",maxWidth:360,width:"100%",padding:32}}>
+        <div style={{fontSize:64,marginBottom:12}}>📨</div>
+        <h2 style={{fontSize:24,fontWeight:700,color:"#1f2937",marginBottom:8}}>Enviado!</h2>
+        <p style={{color:"#6b7280",fontSize:13}}>A gestora foi notificada.</p>
+        <button onClick={()=>setStep("menu")} style={{...C.btn,marginTop:24}}>Voltar ao início</button>
+      </div>
+    </div>
+  );
+
+  // ── FORM VENDA ──
+  if (step==="form") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("loja")} style={{background:"none",border:"none",color:dark,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={C.card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <p style={{fontSize:11,color:"#9ca3af",fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>Lançamento do dia</p>
+            <p style={{fontSize:18,fontWeight:700,color:"#1f2937",marginTop:4}}>{promotora}</p>
+            <p style={{color:pink,fontWeight:500}}>{loja}</p>
+            {existing&&<span style={{fontSize:11,background:"#fef3c7",color:"#92400e",padding:"2px 10px",borderRadius:99}}>Editando registro de hoje</span>}
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Entrada</label>
+          <input type="time" style={{...C.inp,marginTop:6,marginBottom:16}} value={form.entrada} onChange={e=>setForm(f=>({...f,entrada:e.target.value}))}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Saída almoço</label>
+              <input type="time" style={{...C.inp,marginTop:6}} value={form.saidaAlmoco} onChange={e=>setForm(f=>({...f,saidaAlmoco:e.target.value}))}/>
+            </div>
+            <div>
+              <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Volta almoço</label>
+              <input type="time" style={{...C.inp,marginTop:6}} value={form.voltaAlmoco} onChange={e=>setForm(f=>({...f,voltaAlmoco:e.target.value}))}/>
+            </div>
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Saída final</label>
+          <input type="time" style={{...C.inp,marginTop:6,marginBottom:16}} value={form.saidaFinal} onChange={e=>setForm(f=>({...f,saidaFinal:e.target.value}))}/>
+          <label style={{fontSize:14,fontWeight:700,color:"#1f2937"}}>Total de peças *</label>
+          <input type="number" min="0" placeholder="0" style={{...C.inp,marginTop:6,marginBottom:20,fontSize:28,fontWeight:700,textAlign:"center",color:pink}} value={form.pecas} onChange={e=>setForm(f=>({...f,pecas:e.target.value}))}/>
+          <button onClick={salvarVenda} disabled={!form.pecas||saving} style={{...C.btn,opacity:(!form.pecas||saving)?0.4:1}}>
+            {saving?"Salvando...":"Salvar lançamento"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── SELEÇÃO LOJA ──
+  if (step==="loja") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:dark,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={C.card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <p style={{fontSize:18,fontWeight:700,color:"#1f2937"}}>Olá, {promotora}! 👋</p>
+            <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>Em qual loja você está hoje?</p>
+          </div>
+          <select style={{...C.inp,marginTop:6,marginBottom:20}} value={loja} onChange={e=>setLoja(e.target.value)}>
+            <option value="">Selecione a loja...</option>
+            {LOJAS.map(l=><option key={l}>{l}</option>)}
+          </select>
+          <button onClick={goLoja} disabled={!loja} style={{...C.btn,opacity:loja?1:0.4}}>Continuar →</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── FALTA ──
+  if (step==="falta") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:dark,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={C.card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:40,marginBottom:8}}>😷</div>
+            <h2 style={{fontSize:20,fontWeight:700,color:"#1f2937"}}>Registrar falta</h2>
+            <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>{promotora} — {fmtDate(today())}</p>
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Qual loja?</label>
+          <select style={{...C.inp,marginTop:6,marginBottom:16}} value={lojaFalta} onChange={e=>setLojaFalta(e.target.value)}>
+            <option value="">Selecione a loja...</option>
+            {LOJAS.map(l=><option key={l}>{l}</option>)}
+          </select>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Motivo</label>
+          <textarea placeholder="Ex: Doença, consulta médica..." value={motivoFalta} onChange={e=>setMotivoFalta(e.target.value)} style={{...C.inp,marginTop:6,marginBottom:20,minHeight:100,resize:"none"}}/>
+          <button onClick={salvarFalta} disabled={!lojaFalta||!motivoFalta.trim()||saving} style={{...C.btn,opacity:(!lojaFalta||!motivoFalta.trim()||saving)?0.4:1}}>
+            {saving?"Salvando...":"Registrar falta"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── SOLICITAÇÃO ──
+  if (step==="solicitacao") return (
+    <div style={bg}>
+      <div style={{maxWidth:380,margin:"0 auto"}}>
+        <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:dark,fontWeight:600,fontSize:15,cursor:"pointer",marginBottom:16,padding:0}}>← Voltar</button>
+        <div style={C.card}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:40,marginBottom:8}}>📋</div>
+            <h2 style={{fontSize:20,fontWeight:700,color:"#1f2937"}}>Nova solicitação</h2>
+          </div>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Tipo</label>
+          <select style={{...C.inp,marginTop:6,marginBottom:16}} value={tipoSolic} onChange={e=>setTipoSolic(e.target.value)}>
+            <option value="">Selecione...</option>
+            {TIPOS_SOLIC.map(t=><option key={t}>{t}</option>)}
+          </select>
+          <label style={{fontSize:11,fontWeight:700,color:"#6b7280",textTransform:"uppercase",letterSpacing:1}}>Descrição</label>
+          <textarea placeholder="Descreva..." value={descSolic} onChange={e=>setDescSolic(e.target.value)} style={{...C.inp,marginTop:6,marginBottom:20,minHeight:120,resize:"none"}}/>
+          <button onClick={salvarSolic} disabled={!tipoSolic||!descSolic.trim()||saving} style={{...C.btn,opacity:(!tipoSolic||!descSolic.trim()||saving)?0.4:1}}>
+            {saving?"Enviando...":"Enviar solicitação"}
+          </button>
+        </div>
+        {solics.length>0&&(
+          <div style={{marginTop:8}}>
+            <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Minhas solicitações</p>
+            {solics.slice(0,8).map(s=>(
+              <div key={s._k} style={{...C.card,padding:"14px 16px",borderLeft:s.status==="resolvido"?"4px solid #16a34a":"4px solid #f59e0b"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontWeight:700,color:"#1f2937",fontSize:13}}>{s.tipo}</p>
+                    <p style={{fontSize:12,color:"#6b7280",marginTop:2}}>{s.descricao}</p>
+                    <p style={{fontSize:11,color:"#9ca3af",marginTop:4}}>{fmtTS(s.ts)}</p>
+                    {s.resposta&&<p style={{fontSize:12,color:"#16a34a",marginTop:4}}>✓ {s.resposta}</p>}
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,background:s.status==="resolvido"?"#dcfce7":"#fef3c7",color:s.status==="resolvido"?"#16a34a":"#92400e",marginLeft:8,flexShrink:0}}>
+                    {s.status==="resolvido"?"Resolvido":"Pendente"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── HISTÓRICO ──
+  if (step==="historico") {
+    const regsMes = todosRegs.filter(r=>r.data&&r.data.startsWith(mesHist)).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+    const vendasMes = regsMes.filter(r=>r.tipo==="venda");
+    const faltasMes = regsMes.filter(r=>r.tipo==="falta");
+    const total = vendasMes.reduce((s,r)=>s+(r.pecas||0),0);
+    const dias = [...new Set(vendasMes.map(r=>r.data))].length;
+    const lojasList = [...new Set(vendasMes.map(r=>r.loja))];
+    return (
+      <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+        <div style={{padding:"32px 20px 20px",background:grad}}>
+          <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:"#f9a8d4",fontWeight:600,fontSize:14,cursor:"pointer",marginBottom:8,padding:0}}>← Voltar</button>
+          <h1 style={{color:"#fff",fontSize:22,fontWeight:700}}>Meu histórico</h1>
+          <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{promotora}</p>
+        </div>
+        <div style={{padding:16}}>
+          <input type="month" value={mesHist} onChange={e=>setMesHist(e.target.value)} style={{...C.inp2,width:"100%",marginBottom:12}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+            <div style={{...C.card,textAlign:"center",marginBottom:0,padding:14}}><p style={{fontSize:26,fontWeight:700,color:pink}}>{total}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>
+            <div style={{...C.card,textAlign:"center",marginBottom:0,padding:14}}><p style={{fontSize:26,fontWeight:700,color:"#7c3aed"}}>{dias}</p><p style={{fontSize:11,color:"#9ca3af"}}>dias trab.</p></div>
+            <div style={{...C.card,textAlign:"center",marginBottom:0,padding:14}}><p style={{fontSize:26,fontWeight:700,color:"#ef4444"}}>{faltasMes.length}</p><p style={{fontSize:11,color:"#9ca3af"}}>faltas</p></div>
+          </div>
+          {lojasList.length>0&&(
+            <div style={{...C.card,marginBottom:12}}>
+              <p style={{fontSize:12,fontWeight:700,color:"#6b7280",marginBottom:8}}>VENDAS POR LOJA</p>
+              {lojasList.map(l=>{
+                const q=vendasMes.filter(r=>r.loja===l).reduce((s,r)=>s+(r.pecas||0),0);
+                return <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}><span style={{fontSize:14,color:"#1f2937"}}>{l}</span><span style={{fontWeight:700,color:pink}}>{q} peças</span></div>;
+              })}
+            </div>
+          )}
+          <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Registros do mês</p>
+          {regsMes.length===0
+            ?<div style={{textAlign:"center",padding:"30px 0",color:"#9ca3af"}}><div style={{fontSize:36,marginBottom:8}}>📭</div><p>Nenhum registro</p></div>
+            :regsMes.map(r=>(
+              <div key={r._k} style={{...C.card,padding:"14px 16px",borderLeft:r.tipo==="falta"?"4px solid #ef4444":"4px solid #e91e8c"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <p style={{fontWeight:700,color:"#1f2937",fontSize:14}}>{fmtDate(r.data)}</p>
+                    <p style={{fontSize:13,color:"#6b7280"}}>{r.loja}</p>
+                    {r.tipo==="falta"&&<p style={{fontSize:12,color:"#ef4444",marginTop:2}}>Falta: {r.motivo}</p>}
+                    {r.tipo==="venda"&&r.entrada&&<p style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Entrada {fmt(r.entrada)}{r.saidaFinal&&` · Saída ${fmt(r.saidaFinal)}`}</p>}
+                  </div>
+                  {r.tipo==="venda"&&<div style={{textAlign:"right"}}><p style={{fontSize:22,fontWeight:700,color:pink}}>{r.pecas}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>}
+                  {r.tipo==="falta"&&<span style={{fontSize:20}}>😷</span>}
+                </div>
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MEUS PAGAMENTOS ──
+  if (step==="pagamentos") {
+    const qAtual = getQuinzena(today());
+    const diasQ = q => {
+      const inicio = q;
+      const fim = quinzenaFim(q);
+      return todosRegs.filter(r=>r.tipo==="venda"&&r.data>=inicio&&r.data<=fim).reduce((s,r)=>{s.add(r.data);return s;},new Set()).size;
+    };
+    const pagoQ = q => pagtos.find(p=>p.quinzena===q);
+    const diasAtual = diasQ(qAtual);
+    const totalAtual = valDiario * diasAtual;
+    const pagoAtual = pagoQ(qAtual);
+    return (
+      <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+        <div style={{padding:"32px 20px 20px",background:grad}}>
+          <button onClick={()=>setStep("menu")} style={{background:"none",border:"none",color:"#f9a8d4",fontWeight:600,fontSize:14,cursor:"pointer",marginBottom:8,padding:0}}>← Voltar</button>
+          <h1 style={{color:"#fff",fontSize:22,fontWeight:700}}>Meus pagamentos</h1>
+          <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{promotora}</p>
+        </div>
+        <div style={{padding:16}}>
+          <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Quinzena atual — {quinzenaLabel(qAtual)}</p>
+          <div style={{...C.card,borderLeft:pagoAtual?"4px solid #16a34a":"4px solid #f59e0b",marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <p style={{fontSize:13,color:"#6b7280"}}>{diasAtual} dias trabalhados</p>
+                <p style={{fontSize:11,color:"#9ca3af"}}>R$ {valDiario.toFixed(2).replace(".",",")} por dia</p>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <p style={{fontSize:28,fontWeight:700,color:pagoAtual?"#16a34a":pink}}>R$ {totalAtual.toFixed(2).replace(".",",")}</p>
+                <span style={{fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:99,background:pagoAtual?"#dcfce7":"#fef3c7",color:pagoAtual?"#16a34a":"#92400e"}}>{pagoAtual?"✅ Pago":"⏳ Pendente"}</span>
+              </div>
+            </div>
+            {pagoAtual&&pagoAtual.comprovante&&<a href={pagoAtual.comprovante} download="comprovante.pdf" style={{display:"block",marginTop:10,fontSize:13,color:"#16a34a",fontWeight:700,textDecoration:"none"}}>📄 Baixar comprovante</a>}
+          </div>
+          {pagtos.length>0&&<>
+            <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Histórico</p>
+            {pagtos.map(p=>(
+              <div key={p._k} style={{...C.card,padding:"14px 16px",borderLeft:"4px solid #16a34a"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <p style={{fontWeight:700,color:"#1f2937",fontSize:14}}>{quinzenaLabel(p.quinzena)}</p>
+                    <p style={{fontSize:12,color:"#6b7280"}}>{p.dias} dias · Pago em {fmtTS(p.pagoEm)}</p>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{fontSize:20,fontWeight:700,color:"#16a34a"}}>R$ {(p.valor||0).toFixed(2).replace(".",",")}</p>
+                    {p.comprovante&&<a href={p.comprovante} download="comprovante.pdf" style={{fontSize:11,color:"#16a34a",fontWeight:700,textDecoration:"none"}}>📄 Baixar</a>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MENU PRINCIPAL ──
+  const vendasHoje = regsHoje.filter(r=>r.tipo==="venda").length;
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{textAlign:"center",marginBottom:28}}>
+        <Icone size={64}/>
+        <h1 style={{fontSize:22,fontWeight:700,color:"#fff",marginTop:10}}>Olá, {promotora}! 👋</h1>
+        <p style={{color:"#fce4ec",fontSize:13,marginTop:4}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+        {vendasHoje>0&&<div style={{marginTop:10,background:"rgba(255,255,255,0.2)",borderRadius:12,padding:"6px 14px",display:"inline-block"}}>
+          <p style={{color:"#fff",fontSize:12}}>✅ {vendasHoje} venda{vendasHoje!==1?"s":""} lançada{vendasHoje!==1?"s":""} hoje</p>
+        </div>}
+      </div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:12}}>
+        {[
+          {icon:"🏪",label:"Lançar vendas do dia",sub:"Registrar peças vendidas",action:()=>setStep("loja"),bg:"#fff",color:dark,shadow:true},
+          {icon:"😷",label:"Registrar falta",sub:"Informar ausência e motivo",action:()=>setStep("falta"),border:true},
+          {icon:"📋",label:`Solicitações${pendSolics>0?` (${pendSolics})`:""}`,sub:"Produtos, sachês, brindes...",action:()=>setStep("solicitacao"),border:true},
+          {icon:"📊",label:"Meu histórico",sub:"Ver minhas vendas e faltas",action:()=>setStep("historico"),border:true},
+          {icon:"💰",label:"Meus pagamentos",sub:"Ver o que tenho a receber",action:()=>setStep("pagamentos"),border:true},
+        ].map((b,i)=>(
+          <button key={i} onClick={b.action} style={{padding:"18px 24px",borderRadius:20,fontWeight:700,fontSize:15,border:b.border?"2px solid rgba(255,255,255,0.4)":"none",cursor:"pointer",color:b.color||"#fff",background:b.bg||"rgba(255,255,255,0.12)",boxShadow:b.shadow?"0 8px 32px rgba(136,14,79,0.25)":undefined,textAlign:"center"}}>
+            {b.icon} {b.label}
+            <div style={{fontSize:12,fontWeight:400,color:b.color?"#9ca3af":"#fce4ec",marginTop:3}}>{b.sub}</div>
+          </button>
+        ))}
+        <button onClick={onLogout} style={{padding:"10px",borderRadius:14,fontWeight:600,fontSize:13,border:"none",cursor:"pointer",color:"rgba(255,255,255,0.5)",background:"transparent"}}>Sair da conta</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD GESTORA
+// ═══════════════════════════════════════════════════════════════════
+function Dashboard({ onLogout }) {
+  const [tab, setTab] = React.useState("hoje");
+  const [mesRef, setMesRef] = React.useState(today().slice(0,7));
+  const [regs, setRegs] = React.useState([]);
+  const [proms, setProms] = React.useState([]);
+  const [senhas, setSenhas] = React.useState({});
+  const [solics, setSolics] = React.useState([]);
+  const [pagtos, setPagtos] = React.useState([]);
+  const [valDia, setValDia] = React.useState({});
+  const [loading, setLoading] = React.useState(true);
+  const [promoDetalhe, setPromoDetalhe] = React.useState(null);
+  const [novaP, setNovaP] = React.useState("");
+  const [editIdx, setEditIdx] = React.useState(null);
+  const [editVal, setEditVal] = React.useState("");
+  const [resposta, setResposta] = React.useState({});
+  const [quinzenaSel, setQuinzenaSel] = React.useState(getQuinzena(today()));
+  const [novoValor, setNovoValor] = React.useState({});
+  const [pdfFiles, setPdfFiles] = React.useState({});
+  const [salvandoPag, setSalvandoPag] = React.useState({});
+
+  React.useEffect(() => {
+    const u1 = fb.listen("registros", val => { setRegs(val?Object.entries(val).map(([k,v])=>({...v,_k:k})):[]);setLoading(false); });
+    const u2 = fb.listen("promotoras", val => { setProms(val?Object.entries(val).map(([k,v])=>({_k:k,nome:v})):[]);});
+    const u3 = fb.listen("senhas", val => setSenhas(val||{}));
+    const u4 = fb.listen("solicitacoes", val => setSolics(val?Object.entries(val).map(([k,v])=>({...v,_k:k})).sort((a,b)=>b.ts-a.ts):[]));
+    const u5 = fb.listen("pagamentos", val => setPagtos(val?Object.entries(val).map(([k,v])=>({...v,_k:k})):[]));
+    const u6 = fb.listen("valoresDiarios", val => setValDia(val||{}));
+    return () => { u1();u2();u3();u4();u5();u6(); };
+  }, []);
+
+  const wk = () => {
+    const d=new Date(),day=d.getDay();
+    const mon=new Date(d);mon.setDate(d.getDate()-day+(day===0?-6:1));
+    const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+    return [mon.toISOString().split("T")[0],sun.toISOString().split("T")[0]];
+  };
+  const [wS,wE] = wk();
+
+  const filterBy = t => {
+    if(t==="hoje") return regs.filter(r=>r.data===today());
+    if(t==="semana") return regs.filter(r=>r.data>=wS&&r.data<=wE);
+    if(t==="mes") return regs.filter(r=>r.data&&r.data.startsWith(mesRef));
+    return regs;
+  };
+
+  const vendas = arr => arr.filter(r=>r.tipo==="venda");
+  const sum = arr => vendas(arr).reduce((s,r)=>s+(r.pecas||0),0);
+  const byGroup = (arr,k) => { const m={}; vendas(arr).forEach(r=>{m[r[k]]=(m[r[k]]||0)+(r.pecas||0);}); return Object.entries(m).sort((a,b)=>b[1]-a[1]); };
+
+  const cur = filterBy(["hoje","semana","mes"].includes(tab)?tab:"hoje");
+  const totalAll = sum(regs);
+  const solPend = solics.filter(s=>s.status==="pendente").length;
+
+  const addP = async () => { if(!novaP.trim())return; await fb.push("promotoras",novaP.trim()); setNovaP(""); };
+  const removeP = async (k,n) => { if(!window.confirm(`Remover ${n}?`))return; await fb.remove(`promotoras/${k}`); };
+  const saveEdit = async k => { await fb.set(`promotoras/${k}`,editVal); setEditIdx(null); };
+  const resolver = async (k,resp) => { await fb.update(`solicitacoes/${k}`,{status:"resolvido",resposta:resp||"Resolvido",resolvidoEm:Date.now()}); };
+
+  const diasNaQuinzena = (prom, q) => {
+    const fim = quinzenaFim(q);
+    return regs.filter(r=>r.promotora===prom&&r.tipo==="venda"&&r.data>=q&&r.data<=fim).reduce((s,r)=>{s.add(r.data);return s;},new Set()).size;
+  };
+
+  const salvarValor = async nome => {
+    const v = novoValor[nome];
+    if(!v) return;
+    await fb.set(`valoresDiarios/${nome.replace(/\s+/g,"_")}`,Number(v));
+    setNovoValor(x=>({...x,[nome]:""}));
+  };
+
+  const registrarPagamento = async prom => {
+    setSalvandoPag(x=>({...x,[prom]:true}));
+    const dias = diasNaQuinzena(prom, quinzenaSel);
+    const valor = (valDia[prom.replace(/\s+/g,"_")]||0)*dias;
+    const file = pdfFiles[prom];
+    let compUrl = "";
+    if(file) {
+      const reader = new FileReader();
+      compUrl = await new Promise(res=>{reader.onload=e=>res(e.target.result);reader.readAsDataURL(file);});
+    }
+    await fb.push("pagamentos",{promotora:prom,quinzena:quinzenaSel,dias,valor,comprovante:compUrl,pagoEm:Date.now()});
+    setSalvandoPag(x=>({...x,[prom]:false}));
+    setPdfFiles(x=>({...x,[prom]:null}));
+  };
+
+  const print = tipo => {
+    const arr = tipo==="mes" ? regs.filter(r=>r.data&&r.data.startsWith(mesRef)) : regs;
+    const vArr = vendas(arr);
+    const tot = sum(arr);
+    const byP = byGroup(arr,"promotora");
+    const byL = byGroup(arr,"loja");
+    const label = tipo==="mes"?`${mesRef.split("-")[1]}/${mesRef.split("-")[0]}`:"Geral";
+    const w = window.open("","_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Relatório ${label}</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#333}h1{color:#880e4f;border-bottom:2px solid #880e4f;padding-bottom:8px}h2{color:#880e4f;margin-top:20px;font-size:16px}table{width:100%;border-collapse:collapse;margin-top:10px}th{background:#880e4f;color:white;padding:8px;text-align:left}td{padding:8px;border-bottom:1px solid #eee}.tot{font-size:18px;font-weight:bold;color:#880e4f}@media print{button{display:none}}</style></head><body>`);
+    w.document.write(`<h1>📊 Relatório — ${label}</h1><p class="tot">Total: ${tot} peças | ${vArr.length} lançamentos</p>`);
+    w.document.write(`<h2>Por Promotora</h2><table><tr><th>Promotora</th><th>Peças</th><th>Dias</th><th>Faltas</th><th>Média/dia</th></tr>`);
+    byP.forEach(([p,q])=>{
+      const d=[...new Set(vArr.filter(r=>r.promotora===p).map(r=>r.data))].length;
+      const f=arr.filter(r=>r.promotora===p&&r.tipo==="falta").length;
+      w.document.write(`<tr><td>${p}</td><td><b>${q}</b></td><td>${d}</td><td>${f}</td><td>${d?(q/d).toFixed(1):0}</td></tr>`);
+    });
+    w.document.write(`</table><h2>Por Loja</h2><table><tr><th>Loja</th><th>Peças</th><th>%</th></tr>`);
+    byL.forEach(([l,q])=>w.document.write(`<tr><td>${l}</td><td><b>${q}</b></td><td>${tot?(q/tot*100).toFixed(1):0}%</td></tr>`));
+    w.document.write(`</table><br><button onclick="window.print()">🖨️ Imprimir</button></body></html>`);
+    w.document.close();
+  };
+
+  const tabs = [
+    {id:"hoje",label:"Hoje"},{id:"semana",label:"Semana"},{id:"mes",label:"Mês"},
+    {id:"lojas",label:"Lojas"},{id:"ranking",label:"Ranking"},
+    {id:"solic",label:`📋${solPend>0?` (${solPend})`:""}`},
+    {id:"pagamento",label:"💰"},{id:"relatorio",label:"📄"},{id:"config",label:"⚙️"}
+  ];
+
+  if (loading) return <Spinner/>;
+
+  // ── DETALHE PROMOTORA ──
+  if (promoDetalhe) {
+    const rP = regs.filter(r=>r.promotora===promoDetalhe).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+    const vP = rP.filter(r=>r.tipo==="venda");
+    const fP = rP.filter(r=>r.tipo==="falta");
+    const totP = vP.reduce((s,r)=>s+(r.pecas||0),0);
+    const diasP = [...new Set(vP.map(r=>r.data))].length;
+    const lojasP = [...new Set(vP.map(r=>r.loja))];
+    return (
+      <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+        <div style={{padding:"32px 20px 20px",background:grad}}>
+          <button onClick={()=>setPromoDetalhe(null)} style={{background:"none",border:"none",color:"#f9a8d4",fontWeight:600,fontSize:14,cursor:"pointer",marginBottom:8,padding:0}}>← Voltar</button>
+          <h1 style={{color:"#fff",fontSize:22,fontWeight:700}}>{promoDetalhe}</h1>
+          <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{diasP} dias · {fP.length} falta{fP.length!==1?"s":""}</p>
+        </div>
+        <div style={{padding:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div style={{...C.card,textAlign:"center",marginBottom:0}}><p style={{fontSize:32,fontWeight:700,color:pink}}>{totP}</p><p style={{fontSize:12,color:"#9ca3af"}}>peças total</p></div>
+            <div style={{...C.card,textAlign:"center",marginBottom:0}}><p style={{fontSize:32,fontWeight:700,color:"#7c3aed"}}>{diasP>0?(totP/diasP).toFixed(1):0}</p><p style={{fontSize:12,color:"#9ca3af"}}>média/dia</p></div>
+          </div>
+          {lojasP.length>0&&<div style={{...C.card,marginBottom:12}}>
+            <p style={{fontSize:12,fontWeight:700,color:"#6b7280",marginBottom:8}}>LOJAS</p>
+            {lojasP.map(l=>{const q=vP.filter(r=>r.loja===l).reduce((s,r)=>s+(r.pecas||0),0); return(
+              <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f3f4f6"}}>
+                <span style={{fontSize:14,color:"#1f2937"}}>{l}</span><span style={{fontWeight:700,color:pink}}>{q} peças</span>
+              </div>
+            );})}
+          </div>}
+          <p style={{fontWeight:700,fontSize:15,color:"#1f2937",marginBottom:8}}>Histórico</p>
+          {rP.length===0?<p style={{textAlign:"center",color:"#9ca3af",padding:"20px 0"}}>Nenhum registro</p>
+          :rP.map(r=>(
+            <div key={r._k} style={{...C.card,padding:"14px 16px",borderLeft:r.tipo==="falta"?"4px solid #ef4444":"4px solid #e91e8c"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div>
+                  <p style={{fontWeight:700,color:"#1f2937",fontSize:14}}>{fmtDate(r.data)}</p>
+                  <p style={{fontSize:13,color:"#6b7280"}}>{r.loja}</p>
+                  {r.tipo==="falta"&&<p style={{fontSize:12,color:"#ef4444",marginTop:2}}>Falta: {r.motivo}</p>}
+                  {r.tipo==="venda"&&r.entrada&&<p style={{fontSize:11,color:"#9ca3af",marginTop:2}}>Entrada {fmt(r.entrada)}{r.saidaFinal&&` · Saída ${fmt(r.saidaFinal)}`}</p>}
+                </div>
+                {r.tipo==="venda"&&<div style={{textAlign:"right"}}><p style={{fontSize:22,fontWeight:700,color:pink}}>{r.pecas}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>}
+                {r.tipo==="falta"&&<span style={{fontSize:20}}>😷</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f9f4f7"}}>
+      <div style={{padding:"32px 20px 20px",background:grad}}>
+        <p style={{color:"#f9a8d4",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:2}}>Painel da Gestora</p>
+        <h1 style={{color:"#fff",fontSize:24,fontWeight:700,marginTop:4}}>Central de Vendas</h1>
+        <p style={{color:"#f9a8d4",fontSize:13,marginTop:2}}>{new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"})}</p>
+        {solPend>0&&<div style={{marginTop:10,background:"rgba(239,68,68,0.3)",borderRadius:12,padding:"6px 14px",display:"inline-block"}}><p style={{color:"#fff",fontSize:12}}>🔔 {solPend} solicitaç{solPend===1?"ão":"ões"} pendente{solPend!==1?"s":""}</p></div>}
+      </div>
+      <div style={{display:"flex",overflowX:"auto",padding:"12px 16px",gap:8,background:"#fff",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{flexShrink:0,padding:"8px 16px",borderRadius:99,fontSize:13,fontWeight:600,border:"none",cursor:"pointer",background:tab===t.id?grad:"#fce4ec",color:tab===t.id?"#fff":"#880e4f"}}>{t.label}</button>
+        ))}
+      </div>
+      <div style={{padding:16}}>
+
+        {/* HOJE / SEMANA / MÊS */}
+        {["hoje","semana","mes"].includes(tab)&&<>
+          {tab==="mes"&&<input type="month" value={mesRef} onChange={e=>setMesRef(e.target.value)} style={{...C.inp2,width:"100%",marginBottom:12}}/>}
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:grad}}>
+            <p style={{color:"#f9a8d4",fontSize:13}}>Total — {tab==="hoje"?"hoje":tab==="semana"?"esta semana":"este mês"}</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{sum(cur)}</p>
+            <p style={{color:"#f9a8d4",fontSize:12,marginTop:4}}>{vendas(cur).length} lançamentos · {cur.filter(r=>r.tipo==="falta").length} faltas</p>
+          </div>
+          {vendas(cur).length===0&&cur.filter(r=>r.tipo==="falta").length===0
+            ?<div style={{textAlign:"center",padding:"40px 0",color:"#9ca3af"}}><div style={{fontSize:40,marginBottom:8}}>📭</div><p>Nenhum lançamento</p></div>
+            :byGroup(cur,"promotora").map(([p,q])=>{
+              const d=[...new Set(vendas(cur).filter(r=>r.promotora===p).map(r=>r.data))].length;
+              const f=cur.filter(r=>r.promotora===p&&r.tipo==="falta").length;
+              return<div key={p} onClick={()=>setPromoDetalhe(p)} style={{...C.card,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer"}}>
+                <div><p style={{fontWeight:700,color:"#1f2937"}}>{p}</p><p style={{fontSize:12,color:"#9ca3af"}}>{d} dia{d!==1?"s":""} · {f>0?`${f} falta${f!==1?"s":""}`:"sem faltas"}</p></div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{textAlign:"right"}}><p style={{fontSize:28,fontWeight:700,color:pink}}>{q}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>
+                  <span style={{color:"#d1d5db"}}>›</span>
+                </div>
+              </div>;
+            })}
+        </>}
+
+        {/* LOJAS */}
+        {tab==="lojas"&&<>
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:"linear-gradient(135deg,#4a148c,#880e4f)"}}>
+            <p style={{color:"#e9d5ff",fontSize:13}}>Total por loja</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{totalAll}</p>
+          </div>
+          {byGroup(regs,"loja").map(([l,q],i)=>(
+            <div key={l} style={{...C.card,display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:16,fontWeight:700,color:"#d1d5db",width:24}}>#{i+1}</span>
+              <div style={{flex:1}}>
+                <p style={{fontWeight:700,color:"#1f2937",marginBottom:6}}>{l}</p>
+                <div style={{height:6,background:"#f3e8ff",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",borderRadius:99,width:`${totalAll?(q/totalAll)*100:0}%`,background:"linear-gradient(90deg,#880e4f,#e91e8c)"}}/>
+                </div>
+              </div>
+              <div style={{textAlign:"right"}}><p style={{fontSize:24,fontWeight:700,color:pink}}>{q}</p><p style={{fontSize:11,color:"#9ca3af"}}>peças</p></div>
+            </div>
+          ))}
+        </>}
+
+        {/* RANKING */}
+        {tab==="ranking"&&<>
+          <div style={{borderRadius:20,padding:"20px 24px",color:"#fff",textAlign:"center",marginBottom:12,background:"linear-gradient(135deg,#1a237e,#283593)"}}>
+            <p style={{color:"#bfdbfe",fontSize:13}}>Ranking geral</p>
+            <p style={{fontSize:52,fontWeight:700,lineHeight:1.1,marginTop:4}}>{totalAll}</p>
+          </div>
+          {byGroup(regs,"promotora").map(([p,q],i)=>{
+            const d=[...new Set(vendas(regs).filter(r=>r.promotora===p).map(r=>r.data))].length;
+            const f=regs.filter(r=>r.promotora===p&&r.tipo==="falta").length;
+            const m=i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`;
+            return<div key={p} onClick={()=>setPromoDetalhe(p)} style={{...C.card,cursor:"pointer"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:22}}>{m}</span>
+                  <div><p style={{fontWeight:700,color:"#1f2937"}}>{p}</p><p style={{fontSize:12,color:"#9ca3af"}}>{d} dias · {f} falta{f!==1?"s":""} · média {d?(q/d).toFixed(1):0}/dia</p></div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{textAlign:"right"}}><p style={{fontSize:28,fontWeight:700,color:pink}}>{q}</p><p style={{fontSize:11,color:"#9ca3af"}}>total</p></div>
+                  <span style={{color:"#d1d5db"}}>›</span>
+                </div>
+              </div>
+            </div>;
+          })}
+        </>}
+
+        {/* SOLICITAÇÕES */}
+        {tab==="solic"&&<>
+          <p style={{fontWeight:700,fontSize:18,color:"#1f2937",marginBottom:12}}>
+            Solicitações {solPend>0&&<span style={{fontSize:13,background:"#fef3c7",color:"#92400e",padding:"2px 10px",borderRadius:99}}>{solPend} pendente{solPend!==1?"s":""}</span>}
+          </p>
+          {solics.length===0
+            ?<div style={{textAlign:"center",padding:"40px 0",color:"#9ca3af"}}><div style={{fontSize:40,marginBottom:8}}>📭</div><p>Nenhuma solicitação</p></div>
+            :solics.map(s=>(
+              <div key={s._k} style={{...C.card,borderLeft:s.status==="resolvido"?"4px solid #16a34a":"4px solid #f59e0b"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontWeight:700,color:"#1f2937",fontSize:14}}>{s.promotora}</p>
+                    <p style={{fontSize:13,color:pink,fontWeight:600}}>{s.tipo}</p>
+                    <p style={{fontSize:13,color:"#6b7280",marginTop:4}}>{s.descricao}</p>
+                    <p style={{fontSize:11,color:"#9ca3af",marginTop:4}}>{fmtTS(s.ts)}</p>
+                    {s.resposta&&<p style={{fontSize:12,color:"#16a34a",marginTop:4}}>✓ {s.resposta}</p>}
+                  </div>
+                  <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,background:s.status==="resolvido"?"#dcfce7":"#fef3c7",color:s.status==="resolvido"?"#16a34a":"#92400e",marginLeft:8,flexShrink:0}}>
+                    {s.status==="resolvido"?"Resolvido":"Pendente"}
+                  </span>
+                </div>
+                {s.status==="pendente"&&<div style={{display:"flex",gap:8,marginTop:8}}>
+                  <input placeholder="Resposta (opcional)" value={resposta[s._k]||""} onChange={e=>setResposta(r=>({...r,[s._k]:e.target.value}))} style={{...C.inp2,flex:1,fontSize:13,padding:"8px 12px"}}/>
+                  <button onClick={()=>resolver(s._k,resposta[s._k])} style={{padding:"8px 16px",borderRadius:10,fontWeight:700,fontSize:13,border:"none",cursor:"pointer",color:"#fff",background:"#16a34a",whiteSpace:"nowrap"}}>✓ OK</button>
+                </div>}
+              </div>
+            ))}
+        </>}
+
+        {/* PAGAMENTOS */}
+        {tab==="pagamento"&&<>
+          <p style={{fontWeight:700,fontSize:18,color:"#1f2937",marginBottom:4}}>💰 Pagamentos</p>
+          <div style={{display:"flex",gap:8,marginBottom:12,overflowX:"auto",paddingBottom:4}}>
+            {[getQuinzena(today()),...[...new Set(regs.map(r=>r.data?getQuinzena(r.data):null).filter(Boolean))].filter(q=>q!==getQuinzena(today())).slice(0,5)].filter((v,i,a)=>a.indexOf(v)===i).map(q=>(
+              <button key={q} onClick={()=>setQuinzenaSel(q)} style={{flexShrink:0,padding:"6px 14px",borderRadius:99,fontSize:12,fontWeight:600,border:"none",cursor:"pointer",background:quinzenaSel===q?grad:"#fce4ec",color:quinzenaSel===q?"#fff":"#880e4f"}}>{quinzenaLabel(q)}</button>
+            ))}
+          </div>
+          {proms.map(({nome:prom})=>{
+            const vd = valDia[prom.replace(/\s+/g,"_")]||0;
+            const dias = diasNaQuinzena(prom, quinzenaSel);
+            const total = vd*dias;
+            const pago = pagtos.find(p=>p.promotora===prom&&p.quinzena===quinzenaSel);
+            return(
+              <div key={prom} style={{...C.card,borderLeft:pago?"4px solid #16a34a":"4px solid #f59e0b"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div><p style={{fontWeight:700,color:"#1f2937"}}>{prom}</p><p style={{fontSize:12,color:"#6b7280"}}>{dias} dias trabalhados</p></div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{fontSize:22,fontWeight:700,color:pago?"#16a34a":pink}}>R$ {total.toFixed(2).replace(".",",")}</p>
+                    <p style={{fontSize:11,color:"#9ca3af"}}>R$ {vd.toFixed(2).replace(".",",")} /dia</p>
+                  </div>
+                </div>
+                {pago
+                  ?<div style={{background:"#dcfce7",borderRadius:10,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <p style={{fontSize:12,color:"#16a34a",fontWeight:700}}>✅ Pago em {fmtTS(pago.pagoEm)}</p>
+                    {pago.comprovante&&<a href={pago.comprovante} download={`comp_${prom}.pdf`} style={{fontSize:12,color:"#16a34a",fontWeight:700,textDecoration:"none"}}>📄 Baixar</a>}
+                  </div>
+                  :<div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <label style={{flex:1,border:"2px dashed #e5e7eb",borderRadius:10,padding:"8px 12px",fontSize:12,color:"#6b7280",cursor:"pointer",textAlign:"center"}}>
+                        {pdfFiles[prom]?`📄 ${pdfFiles[prom].name}`:"📎 Comprovante PDF"}
+                        <input type="file" accept=".pdf,application/pdf" style={{display:"none"}} onChange={e=>setPdfFiles(x=>({...x,[prom]:e.target.files[0]}))}/>
+                      </label>
+                      <button onClick={()=>registrarPagamento(prom)} disabled={!total||salvandoPag[prom]} style={{padding:"8px 16px",borderRadius:10,fontWeight:700,fontSize:13,border:"none",cursor:"pointer",color:"#fff",background:"#16a34a",opacity:(!total||salvandoPag[prom])?0.4:1,whiteSpace:"nowrap"}}>
+                        {salvandoPag[prom]?"...":"✓ Pago"}
+                      </button>
+                    </div>
+                  </div>}
+              </div>
+            );
+          })}
+          <div style={{...C.card,background:"#f0fdf4",border:"1px solid #bbf7d0"}}>
+            <p style={{fontSize:12,fontWeight:700,color:"#16a34a",marginBottom:8}}>⚙️ Valor diário por promotora</p>
+            {proms.map(({nome:prom})=>(
+              <div key={prom} style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                <span style={{fontSize:13,flex:1,color:"#1f2937"}}>{prom}</span>
+                <input type="number" placeholder="R$/dia" value={novoValor[prom]!==undefined?novoValor[prom]:valDia[prom.replace(/\s+/g,"_")]||""} onChange={e=>setNovoValor(x=>({...x,[prom]:e.target.value}))} style={{...C.inp2,width:90,fontSize:13,padding:"6px 10px"}}/>
+                <button onClick={()=>salvarValor(prom)} style={{padding:"6px 12px",borderRadius:8,fontWeight:700,fontSize:12,border:"none",cursor:"pointer",color:"#fff",background:"#7c3aed"}}>✓</button>
+              </div>
+            ))}
+          </div>
+        </>}
+
+        {/* RELATÓRIO */}
+        {tab==="relatorio"&&<>
+          <p style={{fontWeight:700,fontSize:18,color:"#1f2937",marginBottom:12}}>Gerar Relatório</p>
+          <div style={{...C.card,marginBottom:12}}>
+            <p style={{fontWeight:600,color:"#1f2937",marginBottom:4}}>Por mês</p>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Selecione o mês e imprima</p>
+            <input type="month" value={mesRef} onChange={e=>setMesRef(e.target.value)} style={{...C.inp2,width:"100%",marginBottom:12}}/>
+            <button onClick={()=>print("mes")} style={C.btn}>🖨️ Gerar — {mesRef.split("-")[1]}/{mesRef.split("-")[0]}</button>
+          </div>
+          <div style={C.card}>
+            <p style={{fontWeight:600,color:"#1f2937",marginBottom:4}}>Relatório geral</p>
+            <p style={{fontSize:13,color:"#6b7280",marginBottom:12}}>Todas as vendas desde o início</p>
+            <button onClick={()=>print("geral")} style={{...C.btn,background:"linear-gradient(135deg,#4a148c,#880e4f)"}}>🖨️ Relatório geral</button>
+          </div>
+        </>}
+
+        {/* CONFIG */}
+        {tab==="config"&&<>
+          <p style={{fontWeight:700,fontSize:18,color:"#1f2937",marginBottom:12}}>Gerenciar Promotoras</p>
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            <input style={{...C.inp2,flex:1}} placeholder="Nome da nova promotora" value={novaP} onChange={e=>setNovaP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addP()}/>
+            <button onClick={addP} style={{padding:"10px 16px",borderRadius:12,fontWeight:700,fontSize:14,border:"none",cursor:"pointer",color:"#fff",background:pink}}>+ Add</button>
+          </div>
+          {proms.map((p,i)=>(
+            <div key={p._k} style={{...C.card,display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
+              {editIdx===i
+                ?<><input style={{...C.inp2,flex:1,fontSize:14}} value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus/>
+                  <button onClick={()=>saveEdit(p._k)} style={{background:"none",border:"none",color:"#16a34a",fontWeight:700,fontSize:16,cursor:"pointer"}}>✓</button>
+                  <button onClick={()=>setEditIdx(null)} style={{background:"none",border:"none",color:"#9ca3af",fontSize:16,cursor:"pointer"}}>✕</button>
+                </>
+                :<><div style={{flex:1}}>
+                  <p style={{fontWeight:500,color:"#1f2937"}}>{p.nome}</p>
+                  <p style={{fontSize:11,color:senhas[p.nome.replace(/\s+/g,"_")]?"#16a34a":"#f59e0b"}}>{senhas[p.nome.replace(/\s+/g,"_")]?"✓ Senha cadastrada":"⚠ Sem senha"}</p>
+                </div>
+                <button onClick={()=>{setEditIdx(i);setEditVal(p.nome);}} style={{background:"none",border:"none",fontSize:16,cursor:"pointer"}}>✏️</button>
+                <button onClick={()=>removeP(p._k,p.nome)} style={{background:"none",border:"none",fontSize:16,cursor:"pointer"}}>🗑️</button>
+                </>}
+            </div>
+          ))}
+          <div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:12,padding:12,fontSize:12,color:"#92400e",marginTop:8}}>
+            Promotoras adicionadas aparecem para todas automaticamente!
+          </div>
+          <button onClick={onLogout} style={{...C.btn,background:"none",border:"2px solid #e5e7eb",color:"#6b7280",marginTop:16}}>Sair do painel</button>
+        </>}
+
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SENHA GESTORA
+// ═══════════════════════════════════════════════════════════════════
+function TelaSenha({ onOk }) {
+  const [s, setS] = React.useState("");
+  const [err, setErr] = React.useState(false);
+  const ok = () => { if(s===SENHA_GESTORA) onOk(); else{setErr(true);setS("");} };
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{background:"#fff",borderRadius:24,padding:32,maxWidth:320,width:"100%",textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:12}}>🔐</div>
+        <h2 style={{fontSize:22,fontWeight:700,color:"#1f2937",marginBottom:4}}>Painel da Gestora</h2>
+        <p style={{fontSize:13,color:"#9ca3af",marginBottom:24}}>Digite a senha para entrar</p>
+        <input type="password" placeholder="Senha" value={s} onChange={e=>{setS(e.target.value);setErr(false);}} onKeyDown={e=>e.key==="Enter"&&ok()}
+          style={{width:"100%",border:err?"2px solid #ef4444":"2px solid #e5e7eb",borderRadius:12,padding:"14px 16px",fontSize:18,textAlign:"center",outline:"none",marginBottom:8,letterSpacing:4}}/>
+        {err&&<p style={{color:"#ef4444",fontSize:13,marginBottom:8}}>Senha incorreta.</p>}
+        <button onClick={ok} style={{...C.btn,marginTop:8}}>Entrar</button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// APP PRINCIPAL
+// ═══════════════════════════════════════════════════════════════════
+function App() {
+  const [modo, setModo] = React.useState("home");
+  const [senhaOk, setSenhaOk] = React.useState(false);
+  const [promotora, setPromotora] = React.useState(null);
+  const [ready, setReady] = React.useState(false);
+
+  React.useEffect(() => {
+    const t = setInterval(() => { if(window._fb){setReady(true);clearInterval(t);} }, 100);
+    return () => clearInterval(t);
+  }, []);
+
+  if (!ready) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:grad}}>
+      <div style={{textAlign:"center",color:"#fff"}}><Icone size={64}/><p style={{marginTop:16,fontSize:16}}>Conectando...</p></div>
+    </div>
+  );
+
+  if (modo==="promotora") {
+    if (!promotora) return <LoginPromotora onLogin={n=>setPromotora(n)}/>;
+    return <TelaPromotora promotora={promotora} onLogout={()=>{setPromotora(null);setModo("home");}}/>;
+  }
+
+  if (modo==="dashboard") {
+    if (!senhaOk) return <TelaSenha onOk={()=>setSenhaOk(true)}/>;
+    return <Dashboard onLogout={()=>{setModo("home");setSenhaOk(false);}}/>;
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:grad,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
+      <div style={{textAlign:"center",marginBottom:40}}>
+        <Icone size={80}/>
+        <h1 style={{fontSize:28,fontWeight:700,color:"#fff",marginTop:16}}>Vendas Promotoras</h1>
+        <p style={{color:"#fce4ec",marginTop:6,fontSize:14}}>Controle diário de vendas</p>
+      </div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:16}}>
+        <button onClick={()=>setModo("promotora")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:17,border:"none",cursor:"pointer",color:dark,background:"#fff",boxShadow:"0 8px 32px rgba(136,14,79,0.25)",textAlign:"center"}}>
+          👩 Sou Promotora
+          <div style={{fontSize:12,fontWeight:400,color:"#9ca3af",marginTop:4}}>Lançar vendas do dia</div>
+        </button>
+        <button onClick={()=>setModo("dashboard")} style={{padding:"20px 24px",borderRadius:20,fontWeight:700,fontSize:17,border:"2px solid rgba(255,255,255,0.5)",cursor:"pointer",color:"#fff",background:"rgba(255,255,255,0.15)",textAlign:"center"}}>
+          📊 Painel da Gestora
+          <div style={{fontSize:12,fontWeight:400,color:"#fce4ec",marginTop:4}}>Ver relatórios e rankings</div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
